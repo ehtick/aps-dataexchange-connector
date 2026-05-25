@@ -5,21 +5,25 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SampleConnector"
         mc:Ignorable="d"
-        Title="Sample Host Window" Height="400" Width="640" ResizeMode="NoResize">
-    <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="12.5*"/>
-            <ColumnDefinition Width="75*"/>
-            <ColumnDefinition Width="12.5*"/>
-        </Grid.ColumnDefinitions>
-        
-        <TextBlock Grid.Column="1"
-                   Text="This is the main window of your host application. It is essential for the proper functioning of the Connector UI, which depends on it for operations like window message handling and ownership management. The main window also determines the Connector UI's lifetime -- closing it will automatically close the Connector UI as well."
-                   HorizontalAlignment="Center"
-                   VerticalAlignment="Center"
+        Title="Sample Host App (keep open)" Height="420" Width="700" ResizeMode="NoResize" Topmost="False" ShowInTaskbar="True">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="StatusText"
+                   Grid.Row="0"
+                   Text="Starting connector..."
+                   FontSize="16"
+                   FontWeight="SemiBold"
                    TextWrapping="Wrap"
-                   TextAlignment="Center"
-                   FontSize="14"
-                   Margin="20"/>
+                   Margin="0,0,0,16"/>
+
+        <TextBlock Grid.Row="1"
+                   Text="This is the host application window. The Connector UI runs in a separate window but must stay connected to this process. Do not close this window while using Data Exchange — closing it causes the &quot;Connection Lost&quot; error in the Connector UI."
+                   TextWrapping="Wrap"
+                   TextAlignment="Left"
+                   FontSize="14"/>
     </Grid>
 </Window>

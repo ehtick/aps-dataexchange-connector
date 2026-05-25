@@ -23,16 +23,71 @@ namespace SampleConnector
         private CustomReadWriteModel customReadWriteModel;
         private SDKOptionsDefaultSetup sdkOptions;
         private IClient client;
+        private bool connectorInitialized;
+        private bool isDestroying;
 
         public SampleHostWindow()
         {
             this.InitializeComponent();
             this.RegisterSystemLanguage();
-            this.InitializeConnector();
+            this.Loaded += this.OnWindowLoaded;
+            this.Closed += (_, __) => this.Destroy();
+        }
+
+        private async void OnWindowLoaded(object sender, RoutedEventArgs e)
+        {
+            this.Loaded -= this.OnWindowLoaded;
+
+            if (this.connectorInitialized)
+            {
+                return;
+            }
+
+            var windowHelper = new WindowInteropHelper(this);
+            windowHelper.EnsureHandle();
+
+            if (windowHelper.Handle == IntPtr.Zero)
+            {
+                MessageBox.Show(
+                    this,
+                    "Failed to obtain the host window handle. The Connector UI cannot connect to this application.",
+                    "Sample Connector",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
+            try
+            {
+                this.StatusText.Text = "Initializing connector (authenticating)...";
+                await this.InitializeConnectorAsync(windowHelper.Handle).ConfigureAwait(true);
+                this.connectorInitialized = true;
+                this.StatusText.Text = "Connector is running. Keep this window open while using the Connector UI.";
+                this.Activate();
+                this.Focus();
+            }
+            catch (Exception ex)
+            {
+                this.sdkOptions?.Logger?.Error(ex);
+                MessageBox.Show(
+                    this,
+                    $"Failed to start the Data Exchange Connector:\n\n{ex.Message}",
+                    "Sample Connector",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                this.StatusText.Text = "Connector failed to start. See the error dialog for details.";
+            }
         }
 
         public void Destroy()
         {
+            if (this.isDestroying)
+            {
+                return;
+            }
+
+            this.isDestroying = true;
+
             if (this.customReadWriteModel != null)
             {
                 var exchanges = this.customReadWriteModel.GetLocalExchanges();
@@ -43,7 +98,6 @@ namespace SampleConnector
 
                 this.sdkOptions?.Storage.Save();
 
-                // Destroy interop bridge object and Connector UI
                 if (this.customReadWriteModel.Bridge != null)
                 {
                     this.customReadWriteModel.Bridge.SetWindowState(WindowStateEnum.Close);
@@ -64,9 +118,8 @@ namespace SampleConnector
                     XmlLanguage.GetLanguage(CultureInfo.CurrentCulture.IetfLanguageTag)));
         }
 
-        private void InitializeConnector()
+        private async Task InitializeConnectorAsync(IntPtr hostWindowHandle)
         {
-            // Read configuration
             var authClientId = ConfigurationManager.AppSettings["AuthClientId"];
             var authClientSecret = ConfigurationManager.AppSettings["AuthClientSecret"];
             var authCallback = ConfigurationManager.AppSettings["AuthCallback"];
@@ -76,7 +129,6 @@ namespace SampleConnector
             var hostApplicationName = ConfigurationManager.AppSettings["HostApplicationName"];
             var hostApplicationVersion = ConfigurationManager.AppSettings["HostApplicationVersion"];
 
-            // Validate required configuration
             if (string.IsNullOrEmpty(authClientId))
             {
                 throw new ConfigurationErrorsException("AuthClientId is missing from App.config. Please ensure the config file is properly configured.");
@@ -98,75 +150,58 @@ namespace SampleConnector
                 throw new ConfigurationErrorsException("ConnectorName, ConnectorVersion, HostApplicationName, and HostApplicationVersion are required in App.config.");
             }
 
-            // Step 1: Create SDK options (using PKCE auth flow - no client secret needed)
             this.sdkOptions = new SDKOptionsDefaultSetup()
             {
                 CallBack = authCallback,
                 ClientId = authClientId,
+                ClientSecret = authClientSecret,
                 ConnectorName = connectorName,
                 ConnectorVersion = connectorVersion,
                 HostApplicationName = hostApplicationName,
                 HostApplicationVersion = hostApplicationVersion,
             };
 
-            // Step 2: Create the Client (this triggers authentication)
-            this.client = new Client(this.sdkOptions);
+            // Create the client off the UI thread so OAuth does not block message handling.
+            await Task.Run(() =>
+            {
+                this.client = new Client(this.sdkOptions);
+            }).ConfigureAwait(true);
 
-            // Configure logging
             if (this.GetLogLevel(logLevel) == LogLevel.Debug)
             {
                 this.SetDebugLogLevel(this.sdkOptions?.Logger);
             }
 
-            // Step 3: Create the exchange model with the client
-            this.customReadWriteModel = new CustomReadWriteModel(this.client);
+            // Finish authentication before the Connector UI connects and requests a token.
+            await this.sdkOptions.AuthProvider.GetAuthTokenAsync().ConfigureAwait(true);
 
-            // Load locally cached exchanges
+            this.customReadWriteModel = new CustomReadWriteModel(this.client);
             this.LoadLocalExchanges();
 
-            // Step 4: Create InteropBridgeOptions from the client
             var bridgeOptions = InteropBridgeOptions.FromClient(this.client);
             bridgeOptions.Exchange = this.customReadWriteModel;
             bridgeOptions.Invoker = new MainThreadInvoker(this.Dispatcher);
             bridgeOptions.FeedbackUrl = "https://some.feedback.url";
-            bridgeOptions.HostWindowHandle = new WindowInteropHelper(this).Handle;
+            bridgeOptions.HostWindowHandle = hostWindowHandle;
 
-            // Step 5: Create the bridge and assign it to the model
             var bridge = InteropBridgeFactory.Create(bridgeOptions);
             this.customReadWriteModel.Bridge = bridge;
 
-            // Subscribe to ClientStateChanged event for UI state notifications
             bridge.ClientStateChanged += (sender, e) =>
             {
                 if (e.IsConnected)
                 {
-                    // Set the document name only after the Connector UI is connected.
-                    // If SetDocumentName is called too early, it will have no effect
-                    // because the Connector UI does not yet exist at that point.
                     this.customReadWriteModel.Bridge.SetDocumentName("Sample Document");
                 }
             };
 
-            // Initialize and launch the connector UI asynchronously
-            _ = this.InitializeAndLaunchConnectorUi(bridge);
+            await this.InitializeAndLaunchConnectorUiAsync(bridge).ConfigureAwait(true);
         }
 
-        private async Task InitializeAndLaunchConnectorUi(IInteropBridge interopBridge)
+        private async Task InitializeAndLaunchConnectorUiAsync(IInteropBridge interopBridge)
         {
-            try
-            {
-                // Initialize the interop bridge first
-                await interopBridge.InitializeAsync();
-
-                // Then launch the connector UI
-                await interopBridge.LaunchConnectorUiAsync();
-            }
-            catch (Exception ex)
-            {
-                // Log errors during initialization/launching
-                this.sdkOptions?.Logger?.Error(ex);
-                throw;
-            }
+            await interopBridge.InitializeAsync().ConfigureAwait(true);
+            await interopBridge.LaunchConnectorUiAsync().ConfigureAwait(true);
         }
 
         private LogLevel GetLogLevel(string logLevel)
@@ -179,11 +214,6 @@ namespace SampleConnector
         private void SetDebugLogLevel(ILogger logger)
         {
             logger?.SetDebugLogLevel();
-        }
-
-        private void EnableHttpLogsForDebugging()
-        {
-            (this.client as Client)?.EnableHttpDebugLogging();
         }
 
         private void LoadLocalExchanges()
