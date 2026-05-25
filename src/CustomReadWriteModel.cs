@@ -2,6 +2,7 @@ namespace SampleConnector
 {
     using System;
     using System.Collections.Generic;
+    using System.IO;
     using System.Linq;
     using System.Threading;
     using System.Threading.Tasks;
@@ -22,8 +23,10 @@ namespace SampleConnector
         internal IInteropBridge Bridge { get; set; }
 
         private string currentRevision;
+        private string currentExchangeId;
         private ElementDataModel currentElementDataModel;
         private GeometryConfiguration geometryConfiguration;
+        private const int MaxElementsForGeometryPreview = 20;
 
         public CustomReadWriteModel(IClient client) : base(client)
         {
@@ -59,131 +62,198 @@ namespace SampleConnector
         public async Task GetLatestExchangeDataAsync(GetLatestExchangeDetailsEventArgs arg)
         {
             var exchangeItem = arg.ExchangeItem;
-
             var cancellationToken = arg.CancellationToken;
             var progressManager = this.Client.ProgressStepsManager;
             var fetchExchangeStep = progressManager.GetProgressStep(ProgressStepId.FetchExchange);
-            fetchExchangeStep.SubSteps = 2;
+            var downloadExchangeDataStep = progressManager.GetProgressStep(ProgressStepId.DownloadExchangeData);
+
+            fetchExchangeStep.SubSteps = 3;
+
+            var exchangeIdentifier = CreateDataExchangeIdentifier(exchangeItem);
+            this.EnsureExchangeSession(exchangeItem.ExchangeID);
 
             this.Bridge?.SendNotification($"Downloading '{exchangeItem.Name}'", SeverityEnum.Info, 5000);
 
-            var exchangeIdentifier = CreateDataExchangeIdentifier(exchangeItem);
-
             try
             {
-                await this.ProcessExchangeRevisions(exchangeIdentifier, exchangeItem);
+                cancellationToken.ThrowIfCancellationRequested();
 
-                // Logs Skipped Elements
-                this._sDKOptions?.Logger?.LogSkippedElement(SkippedElementType.Failed, "elementId", "Line", "PolyLine");
-                this._sDKOptions?.Logger?.LogSkippedElement(SkippedElementType.Unsupported, "elementId", "Line", "FeatureLine");
-                this._sDKOptions?.Logger?.LogSkippedElement(SkippedElementType.Failed, "elementId");
-                this._sDKOptions?.Logger?.LogSkippedElement(SkippedElementType.Failed, "elementId", "Line", "CurveSet");
+                fetchExchangeStep.UpdateProgress();
+                var revResponse = await this.Client.GetExchangeRevisionsAsync(exchangeIdentifier).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
 
-                await this.DownloadExchangeGeometry(exchangeIdentifier);
+                fetchExchangeStep.UpdateProgress();
+                var revisions = revResponse.Value;
+                var latestRevisionId = revisions.First().Id;
+                fetchExchangeStep.MarkAsComplete();
+
+                if (!string.IsNullOrEmpty(this.currentRevision) && this.currentRevision == latestRevisionId)
+                {
+                    downloadExchangeDataStep?.MarkAsComplete();
+                    await this.UpdateLocalExchange(exchangeItem).ConfigureAwait(false);
+
+                    var noChangesMessage = $"Exchange '{exchangeItem.Name}' is already up to date.";
+                    this.Bridge?.SendNotification(noChangesMessage, SeverityEnum.Success, 5000);
+                    return;
+                }
+
+                var newerRevisions = new List<string>();
+                var data = await this.GetOrUpdateElementDataAsync(
+                    exchangeIdentifier,
+                    latestRevisionId,
+                    revisions,
+                    newerRevisions,
+                    cancellationToken).ConfigureAwait(false);
+
+                this.LogSkippedElementsSample();
+
+                await this.AnalyzeExchangeElementsAsync(data, newerRevisions, cancellationToken).ConfigureAwait(false);
+                await this.DownloadExchangeGeometryAsync(exchangeIdentifier, downloadExchangeDataStep, cancellationToken).ConfigureAwait(false);
 
                 var successMessage = $"Successfully downloaded '{exchangeItem.Name}'";
                 this.Bridge?.SendNotification(successMessage, SeverityEnum.Success, 0);
 
-                await this.UpdateLocalExchange(exchangeItem);
+                await this.UpdateLocalExchange(exchangeItem).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception e)
             {
                 var errorMessage = $"Failed to download '{exchangeItem.Name}'";
                 this.Bridge?.SendNotification(errorMessage, SeverityEnum.Error, 0);
-                Console.WriteLine($"{errorMessage}: {e.Message}");
+                this._sDKOptions?.Logger?.Error(e);
+                throw;
             }
         }
 
-        private async Task DownloadExchangeGeometry(DataExchangeIdentifier exchangeIdentifier)
+        private void EnsureExchangeSession(string exchangeId)
         {
-            // Download complete exchange as different formats for demonstration
-            var stepFilePath = this.Client.DownloadCompleteExchangeAsSTEP(exchangeIdentifier);
-            var objFilePath = this.Client.DownloadCompleteExchangeAsOBJ(
-                exchangeIdentifier.ExchangeId,
-                exchangeIdentifier.CollectionId);
-
-            var downloadExchangeDataStep = this.Client.ProgressStepsManager.GetProgressStep(ProgressStepId.DownloadExchangeData);
-            downloadExchangeDataStep?.MarkAsComplete();
-
-            Console.WriteLine($"Downloaded geometry: STEP={stepFilePath}, OBJ={objFilePath}");
+            if (this.currentExchangeId != exchangeId)
+            {
+                this.currentExchangeId = exchangeId;
+                this.currentRevision = null;
+                this.currentElementDataModel = null;
+            }
         }
 
-        private async Task ProcessExchangeRevisions(DataExchangeIdentifier exchangeIdentifier, ExchangeItem exchangeItem)
+        private void LogSkippedElementsSample()
         {
-            var revResponse = await this.Client.GetExchangeRevisionsAsync(exchangeIdentifier);
-            var revisions = revResponse.Value;
-            var latestRevisionId = revisions.First().Id;
-            var newerRevisions = new List<string>();
+            this._sDKOptions?.Logger?.LogSkippedElement(SkippedElementType.Failed, "elementId", "Line", "PolyLine");
+            this._sDKOptions?.Logger?.LogSkippedElement(SkippedElementType.Unsupported, "elementId", "Line", "FeatureLine");
+            this._sDKOptions?.Logger?.LogSkippedElement(SkippedElementType.Failed, "elementId");
+            this._sDKOptions?.Logger?.LogSkippedElement(SkippedElementType.Failed, "elementId", "Line", "CurveSet");
+        }
 
-            if (!string.IsNullOrEmpty(this.currentRevision) && this.currentRevision == latestRevisionId)
+        private async Task DownloadExchangeGeometryAsync(
+            DataExchangeIdentifier exchangeIdentifier,
+            Autodesk.DataExchange.ProgressManager.Interfaces.IProgressStep downloadExchangeDataStep,
+            CancellationToken cancellationToken)
+        {
+            var downloadPath = Path.Combine(
+                Path.GetTempPath(),
+                "SampleConnector",
+                exchangeIdentifier.ExchangeId);
+
+            Directory.CreateDirectory(downloadPath);
+
+            await Task.Run(
+                () =>
+                {
+                    var stepResult = this.Client.DownloadCompleteExchangeAsSTEP(exchangeIdentifier, downloadPath, cancellationToken);
+                    if (stepResult.IsFailed)
+                    {
+                        this._sDKOptions?.Logger?.Error($"STEP download failed: {string.Join(", ", stepResult.Errors)}");
+                    }
+                    else
+                    {
+                        this._sDKOptions?.Logger?.Information($"STEP downloaded to: {stepResult.Value}");
+                    }
+
+                    var objResult = this.Client.DownloadCompleteExchangeAsOBJ(
+                        exchangeIdentifier.ExchangeId,
+                        exchangeIdentifier.CollectionId,
+                        downloadPath,
+                        cancellationToken);
+
+                    if (objResult.IsFailed)
+                    {
+                        this._sDKOptions?.Logger?.Error($"OBJ download failed: {string.Join(", ", objResult.Errors)}");
+                    }
+                    else
+                    {
+                        this._sDKOptions?.Logger?.Information($"OBJ downloaded to: {objResult.Value}");
+                    }
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            downloadExchangeDataStep?.MarkAsComplete();
+        }
+
+        private async Task AnalyzeExchangeElementsAsync(
+            ElementDataModel data,
+            List<string> newerRevisions,
+            CancellationToken cancellationToken)
+        {
+            if (data == null)
             {
-                Console.WriteLine("No changes found");
                 return;
             }
 
-            // Update progress for FetchExchange step
-            var fetchExchangeStep = this.Client.ProgressStepsManager.GetProgressStep(ProgressStepId.FetchExchange);
-            fetchExchangeStep?.UpdateProgress();
-
-            ElementDataModel data = await this.GetOrUpdateElementData(exchangeIdentifier, latestRevisionId, revisions, newerRevisions);
-            fetchExchangeStep?.MarkAsComplete();
-
-            await this.AnalyzeExchangeElements(data, newerRevisions);
-        }
-
-        private async Task AnalyzeExchangeElements(ElementDataModel data, List<string> newerRevisions)
-        {
-            // Demonstrate various element analysis operations
             var wallElements = data.Elements.Where(element => element.Category == "Walls").ToList();
             var addedElements = data.GetCreatedElements(newerRevisions);
             var modifiedElements = data.GetModifiedElements(newerRevisions);
             var deletedElements = data.GetDeletedElements(newerRevisions);
 
-            // Load geometry for all elements
-            var geometries = await data.GetElementGeometriesAsync(data.Elements);
+            var elementList = data.Elements.ToList();
+            if (elementList.Count > 0 && elementList.Count <= MaxElementsForGeometryPreview)
+            {
+                await data.GetElementGeometriesAsync(elementList, cancellationToken).ConfigureAwait(false);
+            }
 
-            // Log analysis results for sample purposes
-            Console.WriteLine($"Analysis: {wallElements.Count} walls, {addedElements.Count()} added, " +
-                            $"{modifiedElements.Count()} modified, {deletedElements.Count()} deleted elements");
+            Console.WriteLine(
+                $"Analysis: {wallElements.Count} walls, {addedElements.Count()} added, " +
+                $"{modifiedElements.Count()} modified, {deletedElements.Count()} deleted elements");
         }
 
-        private async Task<ElementDataModel> GetOrUpdateElementData(
+        private async Task<ElementDataModel> GetOrUpdateElementDataAsync(
             DataExchangeIdentifier exchangeIdentifier,
             string latestRevisionId,
             IEnumerable<ExchangeRevision> revisions,
-            List<string> newerRevisions)
+            List<string> newerRevisions,
+            CancellationToken cancellationToken)
         {
-            ElementDataModel data;
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (this.currentElementDataModel == null)
             {
-                // Get full exchange data for the first time
-                var response = await this.Client.GetElementDataModelAsync(exchangeIdentifier);
+                var response = await this.Client.GetElementDataModelAsync(exchangeIdentifier).ConfigureAwait(false);
                 this.currentElementDataModel = response.Value;
                 this.currentRevision = latestRevisionId;
-                data = this.currentElementDataModel;
                 newerRevisions.Add(latestRevisionId);
+                return this.currentElementDataModel;
             }
-            else
-            {
-                // Update with delta changes
-                var response = await this.Client.RetrieveLatestExchangeDataAsync(this.currentElementDataModel);
-                var newRevision = response.Value;
 
-                if (!string.IsNullOrEmpty(newRevision))
+            var deltaResponse = await this.Client.RetrieveLatestExchangeDataAsync(this.currentElementDataModel).ConfigureAwait(false);
+            var newRevision = deltaResponse.Value;
+
+            if (!string.IsNullOrEmpty(newRevision))
+            {
+                foreach (var revision in revisions)
                 {
-                    foreach (var revision in revisions)
+                    if (revision.Id == this.currentRevision)
                     {
-                        if (revision.Id == this.currentRevision) break;
-                        newerRevisions.Add(revision.Id);
+                        break;
                     }
-                    this.currentRevision = newRevision;
+
+                    newerRevisions.Add(revision.Id);
                 }
 
-                data = ElementDataModel.Create(Client);
+                this.currentRevision = newRevision;
             }
 
-            return data;
+            return this.currentElementDataModel;
         }
 
 
@@ -265,16 +335,16 @@ namespace SampleConnector
             }
         }
 
-        [Obsolete]
         private async Task GenerateViewableAsync(ExchangeItem exchangeItem)
         {
             await Task.Run(async () =>
             {
                 try
                 {
-                    // Simulate processing time - in real scenario this would be determined by the actual process
-                    await Task.Delay(ViewableGenerationDelayMs);
-                    await this.Client.GenerateViewableAsync(exchangeItem.ExchangeID, exchangeItem.ContainerID);
+                    await Task.Delay(ViewableGenerationDelayMs).ConfigureAwait(false);
+#pragma warning disable CS0618
+                    await this.Client.GenerateViewableAsync(exchangeItem.ExchangeID, exchangeItem.ContainerID).ConfigureAwait(false);
+#pragma warning restore CS0618
                 }
                 catch (Exception ex)
                 {
@@ -363,28 +433,31 @@ namespace SampleConnector
 
         private async Task UpdateLocalExchange(ExchangeItem exchangeItem)
         {
-            var dataExchangeIdentifier = new DataExchangeIdentifier
-            {
-                CollectionId = exchangeItem.ContainerID,
-                ExchangeId = exchangeItem.ExchangeID,
-                HubId = exchangeItem.HubId,
-            };
+            var loadExchangeStep = this.Client.ProgressStepsManager.GetProgressStep(ProgressStepId.LoadExchange);
+            var dataExchangeIdentifier = CreateDataExchangeIdentifier(exchangeItem);
 
-            DataExchange exchange = await base.GetExchangeAsync(dataExchangeIdentifier);
+            DataExchange exchange = await base.GetExchangeAsync(dataExchangeIdentifier).ConfigureAwait(false);
             if (exchange != null)
             {
                 exchangeItem.FileVersion = exchange.FileVersionId;
                 exchangeItem.LastModified = exchange.Updated;
             }
 
-            var localExchange = localStorage.FirstOrDefault(item => item.ExchangeID == exchange.ExchangeID);
-            if (localExchange != null)
+            var localExchange = this.localStorage.FirstOrDefault(item => item.ExchangeID == exchange?.ExchangeID);
+            if (localExchange != null && exchange != null)
             {
                 if (localExchange.FileVersionId != exchange.FileVersionId)
+                {
                     localExchange.FileVersionId = exchange.FileVersionId;
+                }
+
                 if (localExchange.Updated != exchange.Updated)
+                {
                     localExchange.Updated = exchange.Updated;
+                }
             }
+
+            loadExchangeStep?.MarkAsComplete();
         }
 
         public List<DataExchange> GetLocalExchanges()

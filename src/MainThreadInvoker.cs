@@ -18,11 +18,11 @@ namespace SampleConnector
         {
             if (this.dispatcher.CheckAccess())
             {
-                return await func();
+                return await func().ConfigureAwait(true);
             }
 
             var operation = await this.dispatcher.InvokeAsync(func);
-            return await operation;
+            return await operation.ConfigureAwait(true);
         }
     }
 }
