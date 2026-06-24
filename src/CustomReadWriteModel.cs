@@ -35,7 +35,6 @@ namespace SampleConnector
         }
 
         private List<DataExchange> localStorage = new List<DataExchange>();
-        private const int ViewableGenerationDelayMs = 5000;
 
         public override async Task<List<DataExchange>> GetExchangesAsync(ExchangeSearchFilter exchangeSearchFilter)
         {
@@ -299,7 +298,8 @@ namespace SampleConnector
 
                 await this.Client.SyncExchangeDataAsync(dataExchangeIdentifier, elementDataModel);
 
-                await this.GenerateViewableAsync(exchangeItem);
+                // Viewable generation is handled server-side in SDK 7.5.0; the client-side
+                // Client.GenerateViewableAsync API was removed (no replacement).
             }
             catch (Exception e)
             {
@@ -333,25 +333,6 @@ namespace SampleConnector
             {
                 return await this.UpdateExistingExchangeData();
             }
-        }
-
-        private async Task GenerateViewableAsync(ExchangeItem exchangeItem)
-        {
-            await Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(ViewableGenerationDelayMs).ConfigureAwait(false);
-#pragma warning disable CS0618
-                    await this.Client.GenerateViewableAsync(exchangeItem.ExchangeID, exchangeItem.ContainerID).ConfigureAwait(false);
-#pragma warning restore CS0618
-                }
-                catch (Exception ex)
-                {
-                    this._sDKOptions?.Logger?.Error(ex);
-                    throw;
-                }
-            });
         }
 
         private void HandleUpdateError(Exception exception, string exchangeName)

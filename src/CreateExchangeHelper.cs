@@ -1,8 +1,8 @@
 using Autodesk.DataExchange.Core.Enums;
 using Autodesk.DataExchange.DataModels;
 using Autodesk.DataExchange.SchemaObjects.Units;
-using Autodesk.GeometryPrimitives.Data;
-using Autodesk.GeometryPrimitives.Data.DX;
+using Autodesk.GeometryUtilities.PrimitivesAPI;
+using Autodesk.GeometryUtilities.PrimitivesAPI.DX;
 using Autodesk.GeometryUtilities.MeshAPI;
 using Autodesk.Parameters;
 using System;
