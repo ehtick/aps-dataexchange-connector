@@ -15,7 +15,7 @@ This section documents the migration from SDK 7.2.1-beta to **Autodesk Data Exch
 ### 📋 Overview of Changes
 
 - **SDK Version**: Upgraded to `Autodesk.DataExchange 7.5.0-beta`
-- **UI SDK Version**: Upgraded to `Autodesk.DataExchange.UI 7.5.0-alpha.3`
+- **UI SDK Version**: Upgraded to `Autodesk.DataExchange.UI 7.5.0-beta`
 - **Breaking Changes**: Yes — see below
 - **Build result**: 0 errors after fixes applied
 
@@ -24,7 +24,7 @@ This section documents the migration from SDK 7.2.1-beta to **Autodesk Data Exch
 | Package | Previous Version | New Version | Impact |
 |---------|------------------|-------------|---------|
 | `Autodesk.DataExchange` | `7.2.1-beta` | `7.5.0-beta` | **Minor** - breaking changes |
-| `Autodesk.DataExchange.UI` | `7.2.1-beta` | `7.5.0-alpha.3` | **Minor** - breaking changes |
+| `Autodesk.DataExchange.UI` | `7.2.1-beta` | `7.5.0-beta` | **Minor** - breaking changes |
 
 ### ⚠️ Breaking Changes
 
@@ -132,7 +132,7 @@ longer required (NuGet resolves transitive dependencies automatically):
 ```xml
 <ItemGroup>
   <PackageReference Include="Autodesk.DataExchange" Version="7.5.0-beta" />
-  <PackageReference Include="Autodesk.DataExchange.UI" Version="7.5.0-alpha.3" />
+  <PackageReference Include="Autodesk.DataExchange.UI" Version="7.5.0-beta" />
 </ItemGroup>
 ```
 

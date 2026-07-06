@@ -59,7 +59,7 @@
   <!-- PackageReference - NuGet will automatically resolve all transitive dependencies -->
   <ItemGroup>
     <PackageReference Include="Autodesk.DataExchange" Version="7.5.0-beta" />
-    <PackageReference Include="Autodesk.DataExchange.UI" Version="7.5.0-alpha.3" />
+    <PackageReference Include="Autodesk.DataExchange.UI" Version="7.5.0-beta" />
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
     <PackageReference Include="Serilog" Version="2.10.0" />
     <PackageReference Include="Serilog.Settings.AppSettings" Version="2.2.2" />
