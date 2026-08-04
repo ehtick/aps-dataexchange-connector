@@ -1,5 +1,6 @@
 using Autodesk.DataExchange.Core.Enums;
 using Autodesk.DataExchange.DataModels;
+using Autodesk.DataExchange.Interface;
 using Autodesk.DataExchange.SchemaObjects.Units;
 using Autodesk.GeometryUtilities.PrimitivesAPI;
 using Autodesk.GeometryUtilities.PrimitivesAPI.DX;
@@ -13,6 +14,11 @@ using System.Threading.Tasks;
 
 namespace SampleConnector
 {
+    // ElementProperties / AddElement(ElementProperties) / SetElementGeometry(Element, List<ElementGeometry>)
+    // are marked [Obsolete] as of SDK 7.6.0-alpha in favor of AddElement(...) + Classify()/DefineType()/SetType()
+    // and the IElement-based SetElementGeometry overload. Still functional; this sample has not migrated yet
+    // (see migration-guide.md).
+#pragma warning disable CS0618
     public class CreateExchangeHelper
     {
         private RenderStyle commonRenderStyle = new RenderStyle("Common Render Style", new RGBA(255, 0, 0, 255), 1);
@@ -109,7 +115,7 @@ namespace SampleConnector
         /// <summary>
         /// Adds a unique string parameter to the specified element.
         /// </summary>
-        public static async Task AddUniqueStringParameter(Element element)
+        public static async Task AddUniqueStringParameter(IElement element)
         {
             if (element == null) throw new ArgumentNullException(nameof(element));
 
@@ -117,7 +123,7 @@ namespace SampleConnector
             await AddStringParameter(element, uniqueId);
         }
 
-        private static async Task AddStringParameter(Element element, string uniqueId)
+        private static async Task AddStringParameter(IElement element, string uniqueId)
         {
             var parameter = new Parameter($"TestString{uniqueId}", "TestStringValue")
             {
@@ -696,4 +702,5 @@ namespace SampleConnector
             dataModel.SetElementGeometry(polyLineElement, polyLineElementGeometry);
         }
     }
+#pragma warning restore CS0618
 }
