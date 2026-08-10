@@ -3,20 +3,20 @@
 This guide documents SDK upgrades for the **Sample UI Connector**. The most recent
 migration is listed first; earlier migrations are preserved below for reference.
 
-- [🔄 Migration Guide: SDK 7.6.0-alpha Upgrade](#-migration-guide-sdk-760-alpha-upgrade) — **latest**
+- [🔄 Migration Guide: SDK 7.6.0-beta Upgrade](#-migration-guide-sdk-760-beta-upgrade) — **latest**
 - [🔄 Migration Guide: SDK 7.5.0 Upgrade](#-migration-guide-sdk-750-upgrade)
 - [🔄 Migration Guide: SDK 7.2.1-beta Upgrade](#-migration-guide-sdk-721-beta-upgrade)
 
 ---
 
-## 🔄 Migration Guide: SDK 7.6.0-alpha Upgrade
+## 🔄 Migration Guide: SDK 7.6.0-beta Upgrade
 
-This section documents the migration from SDK 7.5.0 to **Autodesk Data Exchange SDK 7.6.0-alpha**.
+This section documents the migration from SDK 7.5.0 to **Autodesk Data Exchange SDK 7.6.0-beta**.
 
 ### 📋 Overview of Changes
 
-- **SDK Version**: Upgraded to `Autodesk.DataExchange 7.6.0-alpha`
-- **UI SDK Version**: Upgraded to `Autodesk.DataExchange.UI 7.6.0-alpha`
+- **SDK Version**: Upgraded to `Autodesk.DataExchange 7.6.0-beta`
+- **UI SDK Version**: Upgraded to `Autodesk.DataExchange.UI 7.6.0-beta`
 - **Breaking Changes**: Yes — this is **not** a pure version bump. `IClient.GetElementDataModelAsync`
   now returns `IElementDataModel`, `ElementDataModel.Elements` yields `IElement`, and a handful of
   string-Id-based APIs were renamed/obsoleted in favor of `SourceId`/`UniqueId`-based ones.
@@ -26,8 +26,8 @@ This section documents the migration from SDK 7.5.0 to **Autodesk Data Exchange 
 
 | Package | Previous Version | New Version | Impact |
 |---------|------------------|-------------|---------|
-| `Autodesk.DataExchange` | `7.5.0-beta` | `7.6.0-alpha` | **Minor** - breaking changes |
-| `Autodesk.DataExchange.UI` | `7.5.0-beta` | `7.6.0-alpha` | **Minor** - breaking changes |
+| `Autodesk.DataExchange` | `7.5.0-beta` | `7.6.0-beta` | **Minor** - breaking changes |
+| `Autodesk.DataExchange.UI` | `7.5.0-beta` | `7.6.0-beta` | **Minor** - breaking changes |
 
 ### ⚠️ Breaking Changes
 
@@ -41,7 +41,7 @@ implements `IElementDataModel`, so an explicit cast is sufficient — no data mo
 this.currentElementDataModel = response.Value;
 ```
 
-**After (7.6.0-alpha):**
+**After (7.6.0-beta):**
 ```csharp
 this.currentElementDataModel = (ElementDataModel)response.Value;
 ```
@@ -60,7 +60,7 @@ created via `AddElement`) need to accept `IElement` instead of `Element`.
 public static async Task AddUniqueStringParameter(Element element)
 ```
 
-**After (7.6.0-alpha):**
+**After (7.6.0-beta):**
 ```csharp
 public static async Task AddUniqueStringParameter(IElement element)
 ```
@@ -80,7 +80,7 @@ of order and corrupt the local cache.
 var deltaResponse = await this.Client.RetrieveLatestExchangeDataAsync(this.currentElementDataModel).ConfigureAwait(false);
 ```
 
-**After (7.6.0-alpha):**
+**After (7.6.0-beta):**
 ```csharp
 var deltaResponse = await this.Client.RetrieveLatestExchangeAsync(this.currentElementDataModel, cancellationToken).ConfigureAwait(false);
 ```
@@ -98,7 +98,7 @@ identity), and `DeleteElement(string)` deleted by that same ambiguous, non-uniqu
 elementDataModel.DeleteElement(existingElements[0].Id);
 ```
 
-**After (7.6.0-alpha):**
+**After (7.6.0-beta):**
 ```csharp
 elementDataModel.DeleteElementByUniqueId(existingElements[0].UniqueId);
 ```
@@ -110,7 +110,7 @@ elementDataModel.DeleteElementByUniqueId(existingElements[0].UniqueId);
 
 ### 📝 Newly-Obsolete APIs (not removed, not yet migrated in this sample)
 
-SDK 7.6.0-alpha also marks `ElementProperties`, `ElementDataModel.AddElement(ElementProperties)`,
+SDK 7.6.0-beta also marks `ElementProperties`, `ElementDataModel.AddElement(ElementProperties)`,
 and `ElementDataModel.SetElementGeometry(Element, List<ElementGeometry>)` as `[Obsolete]` in favor
 of `AddElement(sourceId, name, transformation, lengthUnit, displayLengthUnit)` combined with
 `Classify()`/`DefineType()`/`SetType()`, and the `IElement`/`List<IElementGeometry>` overload of
@@ -128,8 +128,8 @@ Update the version numbers in `src/SampleConnector.csproj` and
 `test/SampleConnectorUnitTests/SampleConnectorUnitTests.csproj`:
 
 ```xml
-<PackageReference Include="Autodesk.DataExchange" Version="7.6.0-alpha" />
-<PackageReference Include="Autodesk.DataExchange.UI" Version="7.6.0-alpha" />
+<PackageReference Include="Autodesk.DataExchange" Version="7.6.0-beta" />
+<PackageReference Include="Autodesk.DataExchange.UI" Version="7.6.0-beta" />
 ```
 
 #### Step 2: Apply the Code Fixes
@@ -152,7 +152,7 @@ BuildSolution.bat
 
 ### 🎯 Summary of Changes
 
-| Aspect | SDK 7.5.0 | SDK 7.6.0-alpha |
+| Aspect | SDK 7.5.0 | SDK 7.6.0-beta |
 |--------|-----------|-----------------|
 | Element retrieval | `Client.GetElementDataModelAsync` returns `ElementDataModel` | Returns `IElementDataModel`; cast to use as `ElementDataModel` |
 | `ElementDataModel.Elements` | Yields `Element` | Yields `IElement` |
@@ -174,7 +174,7 @@ After upgrading, confirm:
 ---
 
 **Migration Checklist:**
-- [x] Updated all package references to 7.6.0-alpha
+- [x] Updated all package references to 7.6.0-beta
 - [x] Cast `GetElementDataModelAsync(...).Value` to `ElementDataModel` where required
 - [x] Changed `Element` → `IElement` for elements retrieved from `ElementDataModel.Elements`
 - [x] Replaced `RetrieveLatestExchangeDataAsync` with `RetrieveLatestExchangeAsync`
