@@ -15,7 +15,7 @@ using System.Threading.Tasks;
 namespace SampleConnector
 {
     // ElementProperties / AddElement(ElementProperties) / SetElementGeometry(Element, List<ElementGeometry>)
-    // are marked [Obsolete] as of SDK 7.6.0-alpha in favor of AddElement(...) + Classify()/DefineType()/SetType()
+    // are marked [Obsolete] as of SDK 7.6.0-beta in favor of AddElement(...) + Classify()/DefineType()/SetType()
     // and the IElement-based SetElementGeometry overload. Still functional; this sample has not migrated yet
     // (see migration-guide.md).
 #pragma warning disable CS0618
