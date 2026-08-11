@@ -108,17 +108,18 @@ elementDataModel.DeleteElementByUniqueId(existingElements[0].UniqueId);
 `DeleteElementsBySourceId(sourceId)` (deletes all matches) or `DeleteElementByUniqueId(uniqueId)`
 (deletes one unambiguous element — used here since a single, specific element was being deleted).
 
-### 📝 Newly-Obsolete APIs (not removed, not yet migrated in this sample)
+### 📝 Newly-Obsolete APIs, migrated in this sample
 
 SDK 7.6.0-beta also marks `ElementProperties`, `ElementDataModel.AddElement(ElementProperties)`,
 and `ElementDataModel.SetElementGeometry(Element, List<ElementGeometry>)` as `[Obsolete]` in favor
 of `AddElement(sourceId, name, transformation, lengthUnit, displayLengthUnit)` combined with
 `Classify()`/`DefineType()`/`SetType()`, and the `IElement`/`List<IElementGeometry>` overload of
-`SetElementGeometry`. These APIs still work — `CreateExchangeHelper.cs` builds this sample's
-geometry using the old shapes and is wrapped in `#pragma warning disable/restore CS0618` to keep
-building under this project's `WarningsAsErrors=CS0618` setting. Migrating the geometry-creation
-helpers to the new `Classify`/`DefineType`/`SetType` model is tracked as follow-up work, not part of
-this version bump.
+`SetElementGeometry`. `CreateExchangeHelper.cs` has been migrated to the new model: each element is
+created via `AddElement(id, name)`, classified with `Classify(element, ClassificationSystem.Category, category)`
+and `Classify(element, ClassificationSystem.Family, family)`, and typed with `SetType(element, type)`
+(see the `CreateElement` helper). Geometry lists are now typed `List<IElementGeometry>` and passed to
+the `IElement`-based `SetElementGeometry` overload. No `#pragma warning disable CS0618` is required
+anymore in this file.
 
 ### 🔧 Migration Steps
 
@@ -139,9 +140,9 @@ Update the version numbers in `src/SampleConnector.csproj` and
    `RetrieveLatestExchangeAsync(model, cancellationToken)`; swap
    `DeleteElement(existingElements[0].Id)` for `DeleteElementByUniqueId(existingElements[0].UniqueId)`.
 2. **`CreateExchangeHelper.cs`** — change `AddUniqueStringParameter`/`AddStringParameter` to accept
-   `IElement` instead of `Element`; add `#pragma warning disable/restore CS0618` around the class
-   since it still uses the now-obsolete `ElementProperties`/`AddElement(ElementProperties)`/
-   `SetElementGeometry(Element, List<ElementGeometry>)` APIs.
+   `IElement` instead of `Element`; replace `ElementProperties`/`AddElement(ElementProperties)`/
+   `SetElementGeometry(Element, List<ElementGeometry>)` with `AddElement(id, name)` +
+   `Classify()`/`SetType()` + the `IElement`/`List<IElementGeometry>` overload of `SetElementGeometry`.
 
 #### Step 3: Restore and Rebuild
 
@@ -159,7 +160,7 @@ BuildSolution.bat
 | Delta sync | `RetrieveLatestExchangeDataAsync(model)` | `RetrieveLatestExchangeAsync(model, cancellationToken)` |
 | Element identity | `IElement.Id` (ambiguous) | `IElement.SourceId` / `IElement.UniqueId` |
 | Element deletion | `DeleteElement(sourceId)` | `DeleteElementsBySourceId(sourceId)` / `DeleteElementByUniqueId(uniqueId)` |
-| Element/geometry creation | `ElementProperties` + `AddElement(ElementProperties)` + `SetElementGeometry(Element, List<ElementGeometry>)` | Obsolete but functional; new model is `AddElement(...)` + `Classify()`/`DefineType()`/`SetType()` + `SetElementGeometry(IElement, List<IElementGeometry>)` (not yet adopted in this sample) |
+| Element/geometry creation | `ElementProperties` + `AddElement(ElementProperties)` + `SetElementGeometry(Element, List<ElementGeometry>)` | `AddElement(id, name)` + `Classify()`/`SetType()` + `SetElementGeometry(IElement, List<IElementGeometry>)` |
 
 ### 🧪 Testing Your Migration
 
@@ -181,8 +182,8 @@ After upgrading, confirm:
 - [x] Replaced `Id`/`DeleteElement` usage with `UniqueId`/`DeleteElementByUniqueId`
 - [x] Restored NuGet packages and rebuilt the solution (0 errors)
 - [x] Ran the MSTest unit test suite (4/4 passed)
+- [x] Migrated `CreateExchangeHelper.cs` off the now-obsolete `ElementProperties`/`AddElement(ElementProperties)`/`SetElementGeometry(Element, ...)` APIs
 - [ ] Tested create / update / download workflows end to end
-- [ ] Migrated `CreateExchangeHelper.cs` off the now-obsolete `ElementProperties`/`AddElement(ElementProperties)`/`SetElementGeometry(Element, ...)` APIs
 
 ### 📚 Additional Resources
 
