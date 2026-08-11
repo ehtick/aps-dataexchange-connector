@@ -1,5 +1,6 @@
 using Autodesk.DataExchange.Core.Enums;
 using Autodesk.DataExchange.DataModels;
+using Autodesk.DataExchange.Interface;
 using Autodesk.DataExchange.SchemaObjects.Units;
 using Autodesk.GeometryUtilities.PrimitivesAPI;
 using Autodesk.GeometryUtilities.PrimitivesAPI.DX;
@@ -76,12 +77,14 @@ namespace SampleConnector
                 string uniquePrefix = GetRandomId();
                 for (int i = 0; i < numberOfObjects; i++)
                 {
-                    var element = dataModel.AddElement(CreateElementProperties(
+                    var element = CreateElement(
+                        dataModel,
                         $"Object-{uniquePrefix}-{i + 1}",
-                        $"Object-{uniquePrefix}-{i + 1}"));
+                        $"Object-{uniquePrefix}-{i + 1}",
+                        "Generic", "Generic", "Generic Object");
 
                     var geometry = CreateGeometryByType(i % 4, i);
-                    dataModel.SetElementGeometry(element, new List<ElementGeometry> { geometry });
+                    dataModel.SetElementGeometry(element, new List<IElementGeometry> { geometry });
                 }
 
                 return Task.CompletedTask;
@@ -101,15 +104,23 @@ namespace SampleConnector
             return Guid.NewGuid().ToString("N").Substring(0, 5);
         }
 
-        private static ElementProperties CreateElementProperties(string id, string name)
+        /// <summary>
+        /// Creates an element and classifies it, replacing the obsolete
+        /// ElementProperties(id, name, category, family, type) + AddElement(ElementProperties) pair.
+        /// </summary>
+        private static IElement CreateElement(ElementDataModel dataModel, string id, string name, string category, string family, string type)
         {
-            return new ElementProperties(id, name, "Generic", "Generic", "Generic Object");
+            var element = dataModel.AddElement(id, name);
+            dataModel.Classify(element, ClassificationSystem.Category, category);
+            dataModel.Classify(element, ClassificationSystem.Family, family);
+            dataModel.SetType(element, type);
+            return element;
         }
 
         /// <summary>
         /// Adds a unique string parameter to the specified element.
         /// </summary>
-        public static async Task AddUniqueStringParameter(Element element)
+        public static async Task AddUniqueStringParameter(IElement element)
         {
             if (element == null) throw new ArgumentNullException(nameof(element));
 
@@ -117,7 +128,7 @@ namespace SampleConnector
             await AddStringParameter(element, uniqueId);
         }
 
-        private static async Task AddStringParameter(Element element, string uniqueId)
+        private static async Task AddStringParameter(IElement element, string uniqueId)
         {
             var parameter = new Parameter($"TestString{uniqueId}", "TestStringValue")
             {
@@ -166,9 +177,9 @@ namespace SampleConnector
 
         private void AddPrimitiveLineGeometries(ElementDataModel data)
         {
-            var newElement = data.AddElement(new ElementProperties("Line1", "SampleLine", "Generics", "Generic", "Generic Object"));
+            var newElement = CreateElement(data, "Line1", "SampleLine", "Generics", "Generic", "Generic Object");
 
-            var newBRepElementGeometry = new List<ElementGeometry>();
+            var newBRepElementGeometry = new List<IElementGeometry>();
 
             GeometryContainer setOfLines = new GeometryContainer();
 
@@ -185,9 +196,9 @@ namespace SampleConnector
             newBRepElementGeometry.Add(ElementDataModel.CreatePrimitiveGeometry(setOfLines, commonRenderStyle));
             data.SetElementGeometry(newElement, newBRepElementGeometry);
 
-            var newLineElement2 = data.AddElement(new ElementProperties("Line2", "SampleLine", "Generics", "Generic", "Generic Object"));
+            var newLineElement2 = CreateElement(data, "Line2", "SampleLine", "Generics", "Generic", "Generic Object");
 
-            var newlineElementGeometry = new List<ElementGeometry>();
+            var newlineElementGeometry = new List<IElementGeometry>();
 
             GeometryContainer settwoOfLines = new GeometryContainer();
             Line linetwo = new Line(new Point3d { X = -53.34, Y = 10.16, Z = 220.98 }, new Vector3d { X = 0, Y = 0, Z = -30.48 });
@@ -207,9 +218,9 @@ namespace SampleConnector
 
         }
 
-        public void AddNISTObject(ElementDataModel data, Element newBRep)
+        public void AddNISTObject(ElementDataModel data, IElement newBRep)
         {
-            var newBRepGeometry = new List<ElementGeometry>();
+            var newBRepGeometry = new List<IElementGeometry>();
             var filePath = $"{Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)}\\InputStepFile\\cone.stp";
             newBRepGeometry.Add(ElementDataModel.CreateFileGeometry(filePath, GeometryFormat.Step, commonRenderStyle));
             data.SetElementGeometry(newBRep, newBRepGeometry);
@@ -218,8 +229,8 @@ namespace SampleConnector
         public void AddPrimitivePointGeometry(ElementDataModel data)
         {
             //....Primitive geometry - One Point...
-            var newPointElement = data.AddElement(new ElementProperties("Point1", "SamplePoint", "Generics", "Generic", "Point"));
-            var newPointElementGeometry = new List<ElementGeometry>();
+            var newPointElement = CreateElement(data, "Point1", "SamplePoint", "Generics", "Generic", "Point");
+            var newPointElementGeometry = new List<IElementGeometry>();
             DesignPoint point = new DesignPoint(10.0, 10.0, 10.0);
             newPointElementGeometry.Add(ElementDataModel.CreatePrimitiveGeometry(point, commonRenderStyle));
             data.SetElementGeometry(newPointElement, newPointElementGeometry);
@@ -227,8 +238,8 @@ namespace SampleConnector
         }
         public void AddPrimitiveCurveAndSurfaceGeometries(ElementDataModel data)
         {
-            var circleElement = data.AddElement(new ElementProperties("Circle", "SampleCircle", "CircleGenerics", "CircleGeneric", "CircleElement"));
-            var circleElementGeometry = new List<ElementGeometry>();
+            var circleElement = CreateElement(data, "Circle", "SampleCircle", "CircleGenerics", "CircleGeneric", "CircleElement");
+            var circleElementGeometry = new List<IElementGeometry>();
             var geomContainer = new GeometryContainer();
 
             AddCurveGeometries(geomContainer);
@@ -609,21 +620,21 @@ namespace SampleConnector
             };
 
             var meshGeom = ElementDataModel.CreateMeshGeometry(meshObjWithColor, "Mesh With Color");
-            var meshElement = data.AddElement(new ElementProperties("Mesh1", "SampleMesh", "Mesh", "Mesh", "In memory mesh"));
-            data.SetElementGeometry(meshElement, new List<ElementGeometry> { meshGeom });
+            var meshElement = CreateElement(data, "Mesh1", "SampleMesh", "Mesh", "Mesh", "In memory mesh");
+            data.SetElementGeometry(meshElement, new List<IElementGeometry> { meshGeom });
 
             var complexMeshGeom = ElementDataModel.CreateMeshGeometry(complexMesh, "Complex Mesh With Color");
-            var complexMeshElement = data.AddElement(new ElementProperties("ComplexMesh", "ComplexSampleMesh", "Mesh", "Mesh", "Complex In memory mesh"));
-            data.SetElementGeometry(complexMeshElement, new List<ElementGeometry> { complexMeshGeom });
+            var complexMeshElement = CreateElement(data, "ComplexMesh", "ComplexSampleMesh", "Mesh", "Mesh", "Complex In memory mesh");
+            data.SetElementGeometry(complexMeshElement, new List<IElementGeometry> { complexMeshGeom });
         }
 
         public void AddElementsForExchangeUpdate(ElementDataModel data)
         {
             //Add Element with BRep Geometry
-            var newBRepGeometry = new List<ElementGeometry>();
+            var newBRepGeometry = new List<IElementGeometry>();
             var filePath = $"{Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)}\\InputStepFile\\nist_ftc_09_asme1_rd.stp";
             newBRepGeometry.Add(ElementDataModel.CreateFileGeometry(filePath, GeometryFormat.Step, commonRenderStyle));
-            var newBRep = data.AddElement(new ElementProperties("0-new", "SampleBrep", "Generics", "Generic", "Non-Generic Object"));
+            var newBRep = CreateElement(data, "0-new", "SampleBrep", "Generics", "Generic", "Non-Generic Object");
             data.SetElementGeometry(newBRep, newBRepGeometry);
 
             //Add Element with Mesh Geometry
@@ -666,14 +677,14 @@ namespace SampleConnector
             };
 
             var meshGeom = ElementDataModel.CreateMeshGeometry(meshObjWithColor, "Mesh With Color");
-            var meshElement = data.AddElement(new ElementProperties("Mesh3", "SampleMesh", "Mesh", "Mesh", "In memory mesh with Color"));
-            data.SetElementGeometry(meshElement, new List<ElementGeometry> { meshGeom });
+            var meshElement = CreateElement(data, "Mesh3", "SampleMesh", "Mesh", "Mesh", "In memory mesh with Color");
+            data.SetElementGeometry(meshElement, new List<IElementGeometry> { meshGeom });
         }
 
         private void AddPrimitivePolylineGeometry(ElementDataModel dataModel)
         {
-            var polyLineElement = dataModel.AddElement(new ElementProperties("Polyline", "SamplePolyline", "PolylineGenerics", "PolylineGeneric", "PolylineElement"));
-            var polyLineElementGeometry = new List<ElementGeometry>();
+            var polyLineElement = CreateElement(dataModel, "Polyline", "SamplePolyline", "PolylineGenerics", "PolylineGeneric", "PolylineElement");
+            var polyLineElementGeometry = new List<IElementGeometry>();
             var geomContainer = new GeometryContainer()
             {
                 Curves = new List<Curve>()

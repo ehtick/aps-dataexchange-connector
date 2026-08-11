@@ -228,13 +228,13 @@ namespace SampleConnector
             if (this.currentElementDataModel == null)
             {
                 var response = await this.Client.GetElementDataModelAsync(exchangeIdentifier).ConfigureAwait(false);
-                this.currentElementDataModel = response.Value;
+                this.currentElementDataModel = (ElementDataModel)response.Value;
                 this.currentRevision = latestRevisionId;
                 newerRevisions.Add(latestRevisionId);
                 return this.currentElementDataModel;
             }
 
-            var deltaResponse = await this.Client.RetrieveLatestExchangeDataAsync(this.currentElementDataModel).ConfigureAwait(false);
+            var deltaResponse = await this.Client.RetrieveLatestExchangeAsync(this.currentElementDataModel, cancellationToken).ConfigureAwait(false);
             var newRevision = deltaResponse.Value;
 
             if (!string.IsNullOrEmpty(newRevision))
@@ -292,7 +292,7 @@ namespace SampleConnector
                 this._sDKOptions?.Logger?.LogSkippedElement(SkippedElementType.Failed, "elementId");
                 this._sDKOptions?.Logger?.LogSkippedElement(SkippedElementType.Failed, "elementId", "Line", "CurveSet");
 
-                this.currentElementDataModel = response.Value;
+                this.currentElementDataModel = (ElementDataModel)response.Value;
 
                 ElementDataModel elementDataModel = await this.PrepareElementDataModel(exchangeItem);
 
@@ -408,7 +408,7 @@ namespace SampleConnector
             var existingElements = elementDataModel.Elements.ToList();
             if (existingElements.Count > 0)
             {
-                elementDataModel.DeleteElement(existingElements[0].Id);
+                elementDataModel.DeleteElementByUniqueId(existingElements[0].UniqueId);
             }
         }
 

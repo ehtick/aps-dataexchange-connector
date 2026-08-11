@@ -3,8 +3,195 @@
 This guide documents SDK upgrades for the **Sample UI Connector**. The most recent
 migration is listed first; earlier migrations are preserved below for reference.
 
-- [🔄 Migration Guide: SDK 7.5.0 Upgrade](#-migration-guide-sdk-750-upgrade) — **latest**
+- [🔄 Migration Guide: SDK 7.6.0-beta Upgrade](#-migration-guide-sdk-760-beta-upgrade) — **latest**
+- [🔄 Migration Guide: SDK 7.5.0 Upgrade](#-migration-guide-sdk-750-upgrade)
 - [🔄 Migration Guide: SDK 7.2.1-beta Upgrade](#-migration-guide-sdk-721-beta-upgrade)
+
+---
+
+## 🔄 Migration Guide: SDK 7.6.0-beta Upgrade
+
+This section documents the migration from SDK 7.5.0 to **Autodesk Data Exchange SDK 7.6.0-beta**.
+
+### 📋 Overview of Changes
+
+- **SDK Version**: Upgraded to `Autodesk.DataExchange 7.6.0-beta`
+- **UI SDK Version**: Upgraded to `Autodesk.DataExchange.UI 7.6.0-beta`
+- **Breaking Changes**: Yes — this is **not** a pure version bump. `IClient.GetElementDataModelAsync`
+  now returns `IElementDataModel`, `ElementDataModel.Elements` yields `IElement`, and a handful of
+  string-Id-based APIs were renamed/obsoleted in favor of `SourceId`/`UniqueId`-based ones.
+- **Build result**: 0 errors after fixes applied (`msbuild SampleConnector.sln -p:Configuration=Debug -p:Platform=x64`)
+
+### 🚀 Key Dependency Updates
+
+| Package | Previous Version | New Version | Impact |
+|---------|------------------|-------------|---------|
+| `Autodesk.DataExchange` | `7.5.0-beta` | `7.6.0-beta` | **Minor** - breaking changes |
+| `Autodesk.DataExchange.UI` | `7.5.0-beta` | `7.6.0-beta` | **Minor** - breaking changes |
+
+### ⚠️ Breaking Changes
+
+#### 1. `Client.GetElementDataModelAsync` now returns `IElementDataModel` instead of `ElementDataModel`
+
+The concrete `Autodesk.DataExchange.DataModels.ElementDataModel` class still exists and still
+implements `IElementDataModel`, so an explicit cast is sufficient — no data model changes required.
+
+**Before (7.5.0):**
+```csharp
+this.currentElementDataModel = response.Value;
+```
+
+**After (7.6.0-beta):**
+```csharp
+this.currentElementDataModel = (ElementDataModel)response.Value;
+```
+
+**Migration Action:** Add an explicit cast to `ElementDataModel` wherever
+`Client.GetElementDataModelAsync(...).Value` is assigned to an `ElementDataModel`-typed field or variable.
+
+#### 2. `ElementDataModel.Elements` yields `IElement`, not `Element`
+
+Iterating `elementDataModel.Elements` now produces `IElement` instances (even on the concrete
+`ElementDataModel` class). Methods that receive a *retrieved* element (as opposed to one just
+created via `AddElement`) need to accept `IElement` instead of `Element`.
+
+**Before (7.5.0):**
+```csharp
+public static async Task AddUniqueStringParameter(Element element)
+```
+
+**After (7.6.0-beta):**
+```csharp
+public static async Task AddUniqueStringParameter(IElement element)
+```
+
+**Migration Action:** Change parameter types that receive elements read back from
+`ElementDataModel.Elements` from `Element` to `IElement` — e.g.
+`CreateExchangeHelper.AddUniqueStringParameter`/`AddStringParameter`.
+
+#### 3. `IClient.RetrieveLatestExchangeDataAsync` replaced by `RetrieveLatestExchangeAsync`
+
+The `(IElementDataModel, string, string, CancellationToken)` overload is obsolete in favor of a
+`CancellationToken`-only overload; the old one allowed `fromRevision`/`toRevision` to be passed out
+of order and corrupt the local cache.
+
+**Before (7.5.0):**
+```csharp
+var deltaResponse = await this.Client.RetrieveLatestExchangeDataAsync(this.currentElementDataModel).ConfigureAwait(false);
+```
+
+**After (7.6.0-beta):**
+```csharp
+var deltaResponse = await this.Client.RetrieveLatestExchangeAsync(this.currentElementDataModel, cancellationToken).ConfigureAwait(false);
+```
+
+**Migration Action:** Replace `RetrieveLatestExchangeDataAsync(model)` with
+`RetrieveLatestExchangeAsync(model, cancellationToken)`.
+
+#### 4. `IElement.Id` and `ElementDataModel.DeleteElement(string)` obsoleted — use `SourceId`/`UniqueId`
+
+`IElement.Id` was ambiguous (it returned the connector-supplied source identifier, not the SDK
+identity), and `DeleteElement(string)` deleted by that same ambiguous, non-unique Id.
+
+**Before (7.5.0):**
+```csharp
+elementDataModel.DeleteElement(existingElements[0].Id);
+```
+
+**After (7.6.0-beta):**
+```csharp
+elementDataModel.DeleteElementByUniqueId(existingElements[0].UniqueId);
+```
+
+**Migration Action:** Replace `element.Id` with `element.SourceId` (connector-authored id) or
+`element.UniqueId` (SDK-generated unique id), and replace `DeleteElement(sourceId)` with
+`DeleteElementsBySourceId(sourceId)` (deletes all matches) or `DeleteElementByUniqueId(uniqueId)`
+(deletes one unambiguous element — used here since a single, specific element was being deleted).
+
+### 📝 Newly-Obsolete APIs, migrated in this sample
+
+SDK 7.6.0-beta also marks `ElementProperties`, `ElementDataModel.AddElement(ElementProperties)`,
+and `ElementDataModel.SetElementGeometry(Element, List<ElementGeometry>)` as `[Obsolete]` in favor
+of `AddElement(sourceId, name, transformation, lengthUnit, displayLengthUnit)` combined with
+`Classify()`/`DefineType()`/`SetType()`, and the `IElement`/`List<IElementGeometry>` overload of
+`SetElementGeometry`. `CreateExchangeHelper.cs` has been migrated to the new model: each element is
+created via `AddElement(id, name)`, classified with `Classify(element, ClassificationSystem.Category, category)`
+and `Classify(element, ClassificationSystem.Family, family)`, and typed with `SetType(element, type)`
+(see the `CreateElement` helper). Geometry lists are now typed `List<IElementGeometry>` and passed to
+the `IElement`-based `SetElementGeometry` overload. No `#pragma warning disable CS0618` is required
+anymore in this file.
+
+### 🔧 Migration Steps
+
+#### Step 1: Update Package References
+
+Update the version numbers in `src/SampleConnector.csproj` and
+`test/SampleConnectorUnitTests/SampleConnectorUnitTests.csproj`:
+
+```xml
+<PackageReference Include="Autodesk.DataExchange" Version="7.6.0-beta" />
+<PackageReference Include="Autodesk.DataExchange.UI" Version="7.6.0-beta" />
+```
+
+#### Step 2: Apply the Code Fixes
+
+1. **`CustomReadWriteModel.cs`** — cast `Client.GetElementDataModelAsync(...).Value` to
+   `ElementDataModel` at both call sites; swap `RetrieveLatestExchangeDataAsync` for
+   `RetrieveLatestExchangeAsync(model, cancellationToken)`; swap
+   `DeleteElement(existingElements[0].Id)` for `DeleteElementByUniqueId(existingElements[0].UniqueId)`.
+2. **`CreateExchangeHelper.cs`** — change `AddUniqueStringParameter`/`AddStringParameter` to accept
+   `IElement` instead of `Element`; replace `ElementProperties`/`AddElement(ElementProperties)`/
+   `SetElementGeometry(Element, List<ElementGeometry>)` with `AddElement(id, name)` +
+   `Classify()`/`SetType()` + the `IElement`/`List<IElementGeometry>` overload of `SetElementGeometry`.
+
+#### Step 3: Restore and Rebuild
+
+**Command Line:**
+```bash
+BuildSolution.bat
+```
+
+### 🎯 Summary of Changes
+
+| Aspect | SDK 7.5.0 | SDK 7.6.0-beta |
+|--------|-----------|-----------------|
+| Element retrieval | `Client.GetElementDataModelAsync` returns `ElementDataModel` | Returns `IElementDataModel`; cast to use as `ElementDataModel` |
+| `ElementDataModel.Elements` | Yields `Element` | Yields `IElement` |
+| Delta sync | `RetrieveLatestExchangeDataAsync(model)` | `RetrieveLatestExchangeAsync(model, cancellationToken)` |
+| Element identity | `IElement.Id` (ambiguous) | `IElement.SourceId` / `IElement.UniqueId` |
+| Element deletion | `DeleteElement(sourceId)` | `DeleteElementsBySourceId(sourceId)` / `DeleteElementByUniqueId(uniqueId)` |
+| Element/geometry creation | `ElementProperties` + `AddElement(ElementProperties)` + `SetElementGeometry(Element, List<ElementGeometry>)` | `AddElement(id, name)` + `Classify()`/`SetType()` + `SetElementGeometry(IElement, List<IElementGeometry>)` |
+
+### 🧪 Testing Your Migration
+
+After upgrading, confirm:
+
+- ✅ `msbuild SampleConnector.sln -p:Configuration=Debug -p:Platform=x64` builds with 0 errors
+- ✅ The MSTest unit test suite passes (`vstest.console.exe` against `SampleConnectorUnitTests.dll`)
+- ✅ Create Exchange publishes successfully (all geometry types)
+- ✅ Update Exchange adds a new revision without errors
+- ✅ Downloaded exchanges preview correctly in the integrated 3D viewer
+
+---
+
+**Migration Checklist:**
+- [x] Updated all package references to 7.6.0-beta
+- [x] Cast `GetElementDataModelAsync(...).Value` to `ElementDataModel` where required
+- [x] Changed `Element` → `IElement` for elements retrieved from `ElementDataModel.Elements`
+- [x] Replaced `RetrieveLatestExchangeDataAsync` with `RetrieveLatestExchangeAsync`
+- [x] Replaced `Id`/`DeleteElement` usage with `UniqueId`/`DeleteElementByUniqueId`
+- [x] Restored NuGet packages and rebuilt the solution (0 errors)
+- [x] Ran the MSTest unit test suite (4/4 passed)
+- [x] Migrated `CreateExchangeHelper.cs` off the now-obsolete `ElementProperties`/`AddElement(ElementProperties)`/`SetElementGeometry(Element, ...)` APIs
+- [ ] Tested create / update / download workflows end to end
+
+### 📚 Additional Resources
+
+- [APS DataExchange SDK Documentation](https://aps.autodesk.com/en/docs/dx-sdk/v1/developers_guide/overview/)
+- [APS DataExchange Release Notes](https://aps.autodesk.com/en/docs/dx-sdk/v1/developers_guide/release_notes/)
+- [Autodesk Platform Services Developer Portal](https://aps.autodesk.com/)
+- [DataExchange API Reference](https://aps.autodesk.com/en/docs/dx-sdk/v1/reference/)
+- [Sample Code Repository](https://github.com/autodesk-platform-services/aps-dataexchange-connector)
 
 ---
 
